@@ -1,5 +1,5 @@
 /**
- * Sample React Native App
+ * React Native App of Confident Women
  * https://github.com/facebook/react-native
  *
  * @format

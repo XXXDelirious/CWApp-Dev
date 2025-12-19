@@ -1,4 +1,4 @@
-package com.cwapp
+package com.alphaaid.cwapp
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

@@ -51,6 +51,10 @@
   "error": "তার্যটি",
   "missingConfirmation": "নিশ্চিতকরণ অবজেক্ট অনুপস্থিত।",
   "searchServiceProduct": "আপনার কী 'সেবা/পণ্য' প্রয়োজন?",
-  "selectYourExpertise": "আপনার দক্ষতা কী?",
-  "selectYourExpertiseSubtitle": "দয়া করে আপনার দক্ষতার ক্ষেত্র নির্বাচন করুন"
+  "selectYourExpertise": "আপনার দক্ষতা কি?",
+  "selectYourExpertiseSubtitle": "আপনার দক্ষতার ক্ষেত্রগুলি নির্বাচন করুন",
+  "medicalProfessionals": "চিকিৎসা পেশাদার",
+  "wellnessSupport": "সুস্থতা সহায়তা",
+  "homeCare": "হোম কেয়ার এবং দৈনিক ম্যাসেজ",
+  "fitnessInstructors": "ফিটনেস প্রশিক্ষক"
 }

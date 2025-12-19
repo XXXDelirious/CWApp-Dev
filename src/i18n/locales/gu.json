@@ -52,5 +52,9 @@
   "missingConfirmation": "નિશ્ચિતકરણ વસ્તુ ખૂટે છે.",
   "searchServiceProduct": "તમને કઈ 'સેવા/ઉત્પાદન' જોઈએ છે?",
   "selectYourExpertise": "તમારી કુશળતા શું છે?",
-  "selectYourExpertiseSubtitle": "કૃપા કરીને તમારી કુશળતાનું ક્ષેત્ર પસંદ કરો"
+  "selectYourExpertiseSubtitle": "કૃપા કરીને તમારી કુશળતાના ક્ષેત્રો પસંદ કરો",
+  "medicalProfessionals": "તબીબી વ્યાવસાયિકો",
+  "wellnessSupport": "સુખાકારી સહાય",
+  "homeCare": "હોમ કેર અને દૈનિક માલિશ",
+  "fitnessInstructors": "ફિટનેસ ટ્રેનર્સ"
 }

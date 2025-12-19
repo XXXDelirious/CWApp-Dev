@@ -52,5 +52,9 @@
   "missingConfirmation": "पुष्टि ऑब्जेक्ट की कमी है।",
   "searchServiceProduct": "आपको कौन सी 'सेवा/उत्पाद' चाहिए?",
   "selectYourExpertise": "आपकी विशेषज्ञता क्या है?",
-  "selectYourExpertiseSubtitle": "कृपया अपने विशेषज्ञता के क्षेत्र का चयन करें"
+  "selectYourExpertiseSubtitle": "कृपया अपने विशेषज्ञता के क्षेत्र का चयन करें",
+  "medicalProfessionals": "चिकित्सा पेशेवर",
+  "wellnessSupport": "कल्याण सहायता",
+  "homeCare": "होम केयर और दैनिक मालिश",
+  "fitnessInstructors": "फिटनेस प्रशिक्षक"
 }

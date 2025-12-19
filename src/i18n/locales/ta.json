@@ -52,5 +52,9 @@
   "missingConfirmation": "உறுதிப்படுத்தல் பொருள் இல்லை.",
   "searchServiceProduct": "எந்த 'சேவை/தயாரிப்பு' தேவை?",
   "selectYourExpertise": "உங்கள் நிபுணத்துவம் என்ன?",
-  "selectYourExpertiseSubtitle": "உங்கள் நிபுணத்துவ துறையைத் தேர்ந்தெடுக்கவும்"
+  "selectYourExpertiseSubtitle": "உங்கள் நிபுணத்துவத் துறைகளைத் தேர்ந்தெடுக்கவும்",
+  "medicalProfessionals": "மருத்துவ வல்லுநர்கள்",
+  "wellnessSupport": "ஆரோக்கிய ஆதரவு",
+  "homeCare": "வீட்டு பராமரிப்பு மற்றும் தினசரி மசாஜ்",
+  "fitnessInstructors": "உடற்பயிற்சி பயிற்சியாளர்கள்"
 }

@@ -13,11 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 const expertiseOptions = [
-  { id: '1', name: 'Medical Professionals' },
-  { id: '2', name: 'Wellness Support' },
-  { id: '3', name: 'Home Care and Daily Massage' },
-  { id: '4', name: 'Counselors' },
-  { id: '5', name: 'Fitness Instructors' },
+  { id: '1', key: 'medicalProfessionals' },
+  { id: '2', key: 'wellnessSupport' },
+  { id: '3', key: 'homeCare' },
+  { id: '4', key: 'counselors' },
+  { id: '5', key: 'fitnessInstructors' },
 ];
 
 export default function ProviderExpertiseScreen({ navigation, route }) {
@@ -98,7 +98,8 @@ export default function ProviderExpertiseScreen({ navigation, route }) {
                     isSelected && styles.optionTextSelected,
                   ]}
                 >
-                  {option.name}
+                  {/* USE THE TRANSLATION FUNCTION HERE */}
+                  {t(option.key)}
                 </Text>
               </TouchableOpacity>
             );

@@ -51,6 +51,10 @@
   "error": "त्रुटी",
   "missingConfirmation": "पुष्टीकरण ऑब्जेक्ट मिसिंग आहे.",
   "searchServiceProduct": "तुम्हाला कोणती 'सेवा/उत्पाद' हवी आहे?",
-  "selectYourExpertise": "आपली विशेषज्ञता काय आहे?",
-  "selectYourExpertiseSubtitle": "कृपया आपल्या विशेषज्ञता क्षेत्र निवडा"
+  "selectYourExpertise": "तुमची नैपुण्य काय आहे?",
+  "selectYourExpertiseSubtitle": "कृपया तुमच्या कौशल्याची क्षेत्रे निवडा",
+  "medicalProfessionals": "वैद्यकीय व्यावसायिक",
+  "wellnessSupport": "आरोग्य समर्थन",
+  "homeCare": "होम केअर आणि रोजची मालिश",
+  "fitnessInstructors": "फिटनेस प्रशिक्षक"
 }

@@ -68,12 +68,7 @@ export default function ProviderExpertiseScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Title */}
-        <Text style={styles.title}>{t('selectYourExpertise') || 'What is Your Expertise?'}</Text>
-
-        {/* Subtitle */}
-        <Text style={styles.subtitle}>
-          {t('selectYourExpertiseSubtitle') || 'Please select your field your expertise'}
-        </Text>
+        <Text style={styles.title}>{t('selectYourExpertiseSubtitle') || 'Select your expertise'}</Text>
 
         {/* Divider */}
         <View style={styles.divider} />

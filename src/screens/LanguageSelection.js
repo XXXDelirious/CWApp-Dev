@@ -71,7 +71,7 @@ export default function LanguageSelection({ navigation }) {
         />
         {/* Title */}
         <Text style={styles.title}>Choose Your Language</Text>
-        
+
         {/* Dropdown Button */}
         <TouchableOpacity
           style={styles.dropdownButton}

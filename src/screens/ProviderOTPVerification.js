@@ -1,6 +1,8 @@
 // OTPVerification.js
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -20,6 +22,10 @@ import { useTranslation } from 'react-i18next';
 import { AuthContext } from '../context/AuthContext';
 
 export default function OTPVerificationScreen({ navigation, route }) {
+
+  useEffect(() => {
+    log.setScreen('OTPVerification.js');
+  }, []);
 
   // Read Firebase confirmation object from AuthContext instead of route params
   const { confirmation } = useContext(AuthContext);
@@ -69,10 +75,11 @@ export default function OTPVerificationScreen({ navigation, route }) {
     }
 
     try {
-      console.log("Verifying OTP:", otpCode);
+      log.d("Verifying OTP");
       await confirmation.confirm(otpCode);
 
       Alert.alert(t('success'), t('otpVerifiedSuccessfully'));
+      log.d('Attempting to navigate to Home screen with language: ' + language + ', Account type: ' + accountType + ', Phone number: '+ phoneNumber);
 
       navigation.replace('ProviderHomeScreen', {
         language,

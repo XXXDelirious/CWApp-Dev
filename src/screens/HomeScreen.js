@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -106,8 +108,14 @@ export default function HomeScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
 
+  useEffect(() => {
+    log.setScreen('HomeScreen.js');
+  }, []);
+
   const userName = route?.params?.userName || 'User';
   const userAddress = '123 Techzone IV, Greater Noida West, UP';
+
+  log.d('Home screen for user');
 
   const handleFavoriteToggle = (productId) => {
     setProductList((prevProducts) =>

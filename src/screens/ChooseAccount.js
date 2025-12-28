@@ -1,6 +1,8 @@
 // ChooseAccount.js
 
 import React, { useState, useEffect } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -24,13 +26,18 @@ export default function ChooseAccount({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const language = i18n.language || 'en';
 
+  // Run once when screen mounts
+  useEffect(() => {
+    log.setScreen('ChooseAccount.js');
+  }, []);
+
   const handleAccountSelection = (accountType) => {
     setSelectedAccountType(accountType);
   };
 
   const handleContinue = () => {
     if (!selectedAccountType) return;
-    console.log('Attempting to navigate with type:', selectedAccountType); // Add this line
+    log.i('Attempting to navigate SignUp screen for :' + selectedAccountType);
 
     if (selectedAccountType === 'provider') {
       navigation.navigate('ProviderExpertiseScreen', {

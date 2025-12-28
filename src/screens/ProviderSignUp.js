@@ -1,5 +1,7 @@
 //UserSignUp.js
 import React, { useState, useContext } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,

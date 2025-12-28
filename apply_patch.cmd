@@ -59,6 +59,8 @@ call npm install @react-native-firebase/app @react-native-firebase/auth
 
 call npm install react-native-vector-icons
 
+call npm install react-native-logs
+
 echo === DONE SUCCESSFULLY ===
 echo "Refer README file to check for other dependencies"
 echo Need java jdk 17 and make sure its path are set correctly set in env variable.

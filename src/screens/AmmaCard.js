@@ -3,11 +3,16 @@ import { View, Text, TouchableOpacity, Image } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import { styles } from './AmmaListStyles';
+import log from '../../utils/logger';
 
 const AMMA_IMAGE = require('../../assets/AmmaName.png');
 
 export default function AmmaCard({ data }) {
   const [liked, setLiked] = useState(false);
+
+  useEffect(() => {
+    log.setScreen('AmmaCard.js');
+  }, []);
 
   return (
     <View style={styles.cardContainer}>

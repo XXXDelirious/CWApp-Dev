@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+//import { log } from '../../utils/logger';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -11,6 +14,7 @@ import {
   Animated,
   Pressable,
 } from 'react-native';
+
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -37,6 +41,7 @@ export default function LanguageSelection({ navigation }) {
 
   useEffect(() => {
     if (visible) {
+      log.setScreen('LanguageSelection.js');
       Animated.timing(translateY, {
         toValue: 0,
         duration: 250,
@@ -49,6 +54,7 @@ export default function LanguageSelection({ navigation }) {
 
   const handleContinue = () => {
     if (selectedLanguage) {
+      log.d('Navigating to ChooseAccount with language: ' + selectedLanguage.id);
       navigation.navigate('ChooseAccount', {
         language: selectedLanguage.id,
       });
@@ -140,6 +146,7 @@ export default function LanguageSelection({ navigation }) {
                     activeOpacity={0.7}
                     onPress={() => {
                       setSelectedLanguage(lang);
+                      log.d("Language selected: " + lang.name);
                       // Change language immediately when selected
                       i18n.changeLanguage(lang.id);
                       setVisible(false);

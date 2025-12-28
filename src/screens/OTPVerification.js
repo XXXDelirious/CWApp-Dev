@@ -1,6 +1,8 @@
 // OTPVerification.js
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -31,6 +33,10 @@ export default function OTPVerificationScreen({ navigation, route }) {
   const language = i18n.language || 'en';
   const accountType = route?.params?.accountType || 'user';
   const phoneNumber = route?.params?.phoneNumber || '+91';
+
+  useEffect(() => {
+    log.setScreen('OTPVerification.js');
+  }, []);
 
   // Create refs for 6 inputs
   const inputRefs = Array.from({ length: 6 }, () => useRef(null));
@@ -69,8 +75,9 @@ export default function OTPVerificationScreen({ navigation, route }) {
     }
 
     try {
-      console.log("Verifying OTP:", otpCode);
+      //console.log("Verifying OTP:", otpCode);
       await confirmation.confirm(otpCode);
+      log.i('Attempting to navigate to Home screen with language: ' + language + ', Account type: ' + accountType + ', Phone number: '+ phoneNumber);
 
       Alert.alert(t('success'), t('otpVerifiedSuccessfully'));
 

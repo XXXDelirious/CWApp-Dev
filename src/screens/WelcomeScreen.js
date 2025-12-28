@@ -1,6 +1,11 @@
 // WelcomeScreen.js
 
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
+import log from '../../utils/logger';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+
 import {
   View,
   Text,
@@ -9,48 +14,42 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Dimensions,
 } from 'react-native';
-
-// Use SafeAreaView from safe-area-context (fix deprecation warning)
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 export default function WelcomeScreen() {
   const navigation = useNavigation();
 
+  // Run once when screen mounts
+  useEffect(() => {
+    log.setScreen('WelcomeScreen.js');
+  }, []);
+
   // Navigate to LanguageSelection
-  const handleNavigate = () => {
+  const handleNavigate = useCallback(() => {
+
+    log.d('Navigating to LanguageSelection in ' + 5 + ' sec or on screen tap');
+    //log.i("Navigating to LanguageSelection");
     navigation.navigate('LanguageSelection');
-  };
+  }, [navigation]);
 
-  // Auto-navigate after 5 seconds when screen comes into focus
+  // Auto-navigate after 5 seconds when screen is focused
   useFocusEffect(
-    React.useCallback(() => {
-      const timer = setTimeout(() => {
-        handleNavigate();
-      }, 5000);
-
+    useCallback(() => {
+      const timer = setTimeout(handleNavigate, 5000);
       return () => clearTimeout(timer);
-    }, [])
+    }, [handleNavigate])
   );
 
   return (
-    <SafeAreaView
-      style={styles.container}
-      edges={['top', 'left', 'right']}
-    >
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <TouchableOpacity
         activeOpacity={1}
         style={styles.touchableContainer}
         onPress={handleNavigate}
       >
         <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-        
-        <ScrollView contentContainerStyle={styles.scrollContent}>
 
-          {/* Main Content */}
+        <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
             <View style={styles.logoContainer}>
               <Image
@@ -61,12 +60,12 @@ export default function WelcomeScreen() {
             </View>
 
             <Text style={styles.welcomeText}>Welcome</Text>
-                        <Text style={styles.copyrightText}>@copyright 2025 Alpha-aid Healthcare Pvt. Ltd</Text>
+            <Text style={styles.copyrightText}>
+              © 2025 Alpha-aid Healthcare Pvt. Ltd
+            </Text>
           </View>
 
-          {/* Home Indicator */}
           <View style={styles.homeIndicator} />
-
         </ScrollView>
       </TouchableOpacity>
     </SafeAreaView>

@@ -1,5 +1,7 @@
 //UserSignUp.js
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
+import log from '../../utils/logger';
+
 import {
   View,
   Text,
@@ -27,6 +29,11 @@ export default function UserSignUpScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { setConfirmation } = useContext(AuthContext);
 
+  // Run once when screen mounts
+  useEffect(() => {
+    log.setScreen('UserSignUp.js');
+  }, []);
+
   const language = i18n.language || 'en';
   const accountType = route?.params?.accountType || 'user';
 
@@ -45,7 +52,7 @@ export default function UserSignUpScreen({ navigation, route }) {
       setConfirmation(confirmation);
 
       setLoading(false);
-
+      log.d('Attempting to navigate to OTPVerification screen with mobile number:' + fullPhone);
       navigation.navigate('OTPVerification', {
         language,
         accountType,

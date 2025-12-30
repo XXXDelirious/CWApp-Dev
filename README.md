@@ -168,3 +168,12 @@ To learn more about React Native, take a look at the following resources:
 - [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+
+
+release signing key
+
+Generating 2,048 bit RSA key pair and self-signed certificate (SHA256withRSA) with a validity of 10,000 days
+for: CN=alpha aid, OU=alphaaid, O=alphaaid, L=Greater Noida, ST=UP, C=IN
+[Storing my-release-key.keystore]
+
+passwd; Alphaaid@2025

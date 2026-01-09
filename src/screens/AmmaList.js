@@ -18,8 +18,8 @@ import { styles } from './AmmaListStyles';
 const AMMA_DATA = [
   {
     id: '1',
-    name: 'Amma Name',
-    services: 'Services',
+    name: 'Sarina',
+    services: 'Massages',
     rating: 4.3,
     age: 23,
     price: 200,
@@ -29,8 +29,8 @@ const AMMA_DATA = [
   },
   {
     id: '2',
-    name: 'Amma Name',
-    services: 'Services',
+    name: 'Preeti',
+    services: 'Massages',
     rating: 4.3,
     age: 23,
     price: 200,
@@ -40,8 +40,8 @@ const AMMA_DATA = [
   },
   {
     id: '3',
-    name: 'Amma Name',
-    services: 'Services',
+    name: 'Sujata',
+    services: 'Massages',
     rating: 4.3,
     age: 23,
     price: 200,
@@ -51,8 +51,8 @@ const AMMA_DATA = [
   },
   {
     id: '4',
-    name: 'Amma Name',
-    services: 'Services',
+    name: 'Sarita',
+    services: 'Massages',
     rating: 4.3,
     age: 23,
     price: 200,
@@ -62,8 +62,8 @@ const AMMA_DATA = [
   },
   {
     id: '5',
-    name: 'Amma Name',
-    services: 'Services',
+    name: 'Netu',
+    services: 'Massages',
     rating: 4.3,
     age: 23,
     price: 200,

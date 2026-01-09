@@ -30,19 +30,35 @@ export default function MenuScreen() {
   };
 
   const handleMenuItemPress = (itemName) => {
-    Alert.alert(`${itemName}`, `You tapped on ${itemName}`);
-    // Add your navigation logic here
+    if (itemName === 'Bookings' || itemName === 'My bookings') {
+        Alert.alert(`${itemName}`, `You tapped on ${itemName}`);
+        //navigation.navigate('MyBookingScreen');
+    } else {
+        Alert.alert(`${itemName}`, `You tapped on ${itemName}`);
+    }
+    // Add your other navigation logic here
     // Example: navigation.navigate(itemName);
   };
 
   const handleQuickActionPress = (actionName) => {
-    Alert.alert(`${actionName}`, `You tapped on ${actionName}`);
+    if (actionName === 'My bookings') {
+      log.i("Navigating to BookingScreen from Menu item/quick Action");
+      //navigation.navigate('MyBookingScreen');
+    } else {
+        Alert.alert(`${actionName}`, `You tapped on ${actionName}`);
+    }
     // Add your navigation logic here
   };
 
   const handleTabPress = (tabName) => {
-    Alert.alert(`${tabName} Tab`, `You tapped on ${tabName}`);
-    // Add your navigation logic here
+    if (tabName === 'Bookings') {
+      log.i("Navigating to BookingScreen from Bottom Tab");
+      //navigation.navigate('MyBookingScreen');
+    } else if (tabName === 'CW') {
+      navigation.navigate('HomeScreen');
+    } else {
+      Alert.alert(`${tabName} Tab`, `You tapped on ${tabName}`);
+    }
   };
 
   return (
@@ -74,7 +90,7 @@ export default function MenuScreen() {
         {/* Quick Action Cards */}
         <View style={styles.quickActionsContainer}>
           <QuickActionCard
-            icon="clipboard"
+            icon="clipboard-text"
             label="My bookings"
             onPress={() => handleQuickActionPress('My bookings')}
           />

@@ -17,6 +17,7 @@ import ProviderOTPVerification from './src/screens/ProviderOTPVerification'; // 
 import HomeScreen from './src/screens/HomeScreen'; // only if exists
 import AmmaList from './src/screens/AmmaList'; // only if exists
 import MenuScreen from './src/screens/MenuScreen'; // only if exists
+import BookingScreen from './src/screens/BookingScreen'; // only if exists
 
 
 const Stack = createNativeStackNavigator();
@@ -43,6 +44,7 @@ export default function App() {
         <Stack.Screen name="HomeScreen" component={HomeScreen} />
         <Stack.Screen name="AmmaList" component={AmmaList} />
         <Stack.Screen name="MenuScreen" component={MenuScreen} />
+        <Stack.Screen name="BookingScreen" component={BookingScreen} />
 
         </Stack.Navigator>
       </NavigationContainer>

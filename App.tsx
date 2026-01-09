@@ -1,6 +1,6 @@
 /**
  * React Native App of Confident Women
- * https://github.com/facebook/react-native
+ * https://github.com/Alph-aid/CWApp
  *
  * @format
  */

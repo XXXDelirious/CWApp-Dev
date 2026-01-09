@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import log from '../../utils/logger';
 
 import {
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
+  Alert,
   FlatList,
 } from 'react-native';
 
@@ -65,7 +66,7 @@ const services = [
 const products = [
   {
     id: '1',
-    name: 'Amla Hair Oil',
+    name: 'Oil for pain management',
     weight: '250 g',
     price: 500,
     image: require('../../assets/oil.png'),
@@ -74,7 +75,7 @@ const products = [
   },
   {
     id: '2',
-    name: 'knee spray for pain',
+    name: 'Menthol nasal drop',
     weight: '250 ml',
     price: 1200,
     image: require('../../assets/spray.png'),
@@ -147,6 +148,35 @@ export default function HomeScreen({ navigation, route }) {
     );
   };
 
+  const handleMenu = () => {
+     log.i("Navigating to MenuScreen");
+     navigation.navigate('MenuScreen');
+  };
+
+  const handleLogout = () => {
+      log.i("Logout image pressed");
+      console.log("LOGOUT_TRIGGERED");
+
+      Alert.alert(
+        "Logout",
+        "Are you sure you want to logout?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Logout",
+            style: "destructive",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'UserSignUp' }],
+              });
+            }
+          }
+        ],
+        { cancelable: true } // Ensure user can tap outside to close
+      );
+  };
+
   const categories = ['ALL', 'Oil', 'Cream', 'Spray'];
 
   return (
@@ -159,12 +189,24 @@ export default function HomeScreen({ navigation, route }) {
       >
         {/* Header Section */}
         <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <Image
-              source={require('../../assets/profile-placeholder.jpg')}
-              style={styles.profileImage}
-            />
-            <View style={styles.userInfo}>
+          <View style={[styles.headerContent, { flex: 1 }]} pointerEvents="box-none">
+            <TouchableOpacity
+              onPress={handleMenu}
+              activeOpacity={0.7}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              style={{
+                zIndex: 99,
+                elevation: 10,
+                marginRight: 10
+              }}
+            >
+              <Image
+                source={require('../../assets/profile-placeholder.jpg')}
+                style={styles.profileImage}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.userInfo} pointerEvents="none">
               <Text style={styles.greeting}>
                 Hi, <Text style={styles.userName}>{userName}</Text>
               </Text>
@@ -172,6 +214,7 @@ export default function HomeScreen({ navigation, route }) {
             </View>
           </View>
 
+          {/* Corrected: Single icon container with Logout also on the Person icon */}
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.iconButton}>
               <Text style={styles.icon}>🛒</Text>
@@ -179,11 +222,16 @@ export default function HomeScreen({ navigation, route }) {
                 <Text style={styles.badgeText}>1</Text>
               </View>
             </TouchableOpacity>
+
             <TouchableOpacity style={styles.iconButton}>
               <Text style={styles.icon}>🔔</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton}>
-              <Text style={styles.icon}>👤</Text>
+
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleLogout}
+            >
+              <Text style={[styles.icon, { color: '#fff', fontSize: 15 }]}> ⭕ </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -408,6 +456,7 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+    marginLeft: 10,
   },
   greeting: {
     fontSize: 16,

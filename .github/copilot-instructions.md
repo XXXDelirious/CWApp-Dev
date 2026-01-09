@@ -34,116 +34,41 @@ All screens are in `src/screens/`. Navigation uses [React Navigation NativeStack
 **Safe Area**: Always wrap screens with `SafeAreaView` from `react-native-safe-area-context`. Use `useSafeAreaInsets()` hook for dynamic padding (see [WelcomeScreen](src/screens/WelcomeScreen.js#L17), [UserSignUp](src/screens/UserSignUp.js#L20)).
 
 **Component Data**: Screens use local state (`useState`). HomeScreen has hardcoded services array & products array with mock data (id, name, icon/image, price, isFavorite, inCart fields).
+## CWApp — Copilot instructions (concise)
 
-## Key Files & Conventions
+CWApp is a React Native (0.83) healthcare marketplace that supports 8 Indian languages and Firebase phone auth. This file captures the minimal, actionable knowledge an AI coding agent needs to be productive here.
 
-| File | Purpose |
-|------|---------|
-| `App.tsx` | Entry point; wraps app with SafeAreaProvider |
-| `src/screens/*.js` | All screen components; mix of `.js` and `.tsx` extensions |
-| `package.json` | Dependencies: `@react-native-firebase/{app,auth}`, `i18next`, `react-navigation` |
-| `metro.config.js` | Metro bundler config (uses default + mergeConfig pattern) |
-| `jest.config.js` | Test preset: `react-native` |
-| `__tests__/App.test.tsx` | Example test file |
+Key commands
+- `npm start` — Metro dev server
+- `npm run android` — Android build (Android Studio + JDK 20+)
+- `npm run ios` — iOS (macOS): run `bundle install` once, then `bundle exec pod install` after native changes
+- `npm test` — Jest
+- `npm run lint` — ESLint
 
-## Critical Developer Workflows
+Architecture & important files
+- Screens live in `src/screens/` and use React Navigation (native stack). Core screens: `WelcomeScreen.js`, `LanguageSelection.js`, `ChooseAccount.js`, `UserSignUp.js`, `OTPVerification.js`, `HomeScreen.js`, `Provider*` screens.
+- Entry: `App.tsx` (wraps `SafeAreaProvider`).
+- Firebase: Android config at `android/app/google-services.json`.
 
-**Start Development Server**:
-```bash
-npm start
-```
-This runs Metro bundler. Keep terminal open; frontend auto-reloads on file save.
+Patterns you must follow (explicit examples)
+- Language propagation: pass `language` via navigation: `navigation.navigate('Some', { language })`. Read with `const language = route?.params?.language || 'en'`.
+- Phone OTP flow: `auth().signInWithPhoneNumber(fullPhone)` returns `confirmation`; always pass that object to verification screen and call `confirmation.confirm(code)` in `OTPVerification.js`.
+- Safe area: use `SafeAreaView` from `react-native-safe-area-context` and `useSafeAreaInsets()` for dynamic padding (see `src/screens/WelcomeScreen.js`).
 
-**Run Android**:
-```bash
-npm run android
-```
-Requires Android Studio/Emulator + JDK 20+.
+Repo conventions & gotchas
+- Keep file extensions as-is (mix of `.js`, `.ts`, `.tsx`) — do not convert files without instruction.
+- Phone numbers use `+91` (India) in signup flows — do not remove country code.
+- No global state manager: screens rely on local `useState()`; introducing global state is a deliberate architectural change.
+- Android requires a valid `google-services.json` for Firebase flows to work locally.
 
-**Run iOS**:
-```bash
-bundle install                    # First time only
-bundle exec pod install           # Every time native deps change
-npm run ios
-```
-Requires macOS + Xcode.
+Testing & CI
+- Minimal Jest coverage exists at `__tests__/App.test.tsx`. When adding tests, focus on OTP/auth flow and navigation param preservation.
 
-**Linting**:
-```bash
-npm run lint
-```
-Uses ESLint (config: `@react-native/eslint-config`).
+Editing guidance for agents
+- Preserve navigation params (`language`, `confirmation`, `accountType`) across screens.
+- When touching native iOS/Android code remind the user to run CocoaPods (`pod install`) or validate Android gradle config.
+- Keep UI dependency additions minimal; prefer modifying existing components.
 
-**Testing**:
-```bash
-npm test
-```
-Jest with react-native preset.
+If any of these areas are unclear or you want broader edits (e.g., TypeScript migrations, adding OTP unit tests), tell me which area to expand.
 
-**Force Reload** (if Metro doesn't catch changes):
-- Android: Press `R` twice or Ctrl+M → Reload
-- iOS: Press `R` in simulator
-
-**Debugging**: Use React Native Dev Menu (Cmd+D on iOS, Ctrl+M on Android) for console logs & performance.
-
-## Code Style & Patterns
-
-**State Management**: Local `useState()` only; no Redux/Context yet.
-
- # CWApp — Agent Instructions
-
- This file describes the minimal, actionable knowledge an AI coding agent needs to be productive in this repository.
-
- 1) Quick summary
- - React Native app (RN 0.83) with screen-based navigation in `src/screens/`.
- - Phone auth via `@react-native-firebase/auth` (OTP flow implemented in `UserSignUp.js` → `OTPVerification.js`).
- - Language is threaded through navigation: `route.params.language` (defaults to `'en'`).
-
- 2) Most important files to inspect
- - [App.tsx](App.tsx) — app entry, SafeAreaProvider.
- - [src/screens/UserSignUp.js](src/screens/UserSignUp.js) — constructs `+91` phone, calls `auth().signInWithPhoneNumber()` and navigates with `confirmation`.
- - [src/screens/OTPVerification.js](src/screens/OTPVerification.js) — expects `route.params.confirmation` and calls `confirmation.confirm(otp)`.
- - [src/screens/WelcomeScreen.js](src/screens/WelcomeScreen.js) — shows language/navigation pattern.
- - [android/app/google-services.json](android/app/google-services.json) — required for Firebase on Android.
-
- 3) Actionable patterns and examples
- - Always pass `language` and any auth objects through navigation. Example:
-
-	 navigation.navigate('OTPVerification', { confirmation, language })
-
- - When reading params, use defaults:
-
-	 const language = route?.params?.language || 'en';
-
- - Safe area: import and use `SafeAreaView` from `react-native-safe-area-context` and `useSafeAreaInsets()` for padding. See `App.tsx` and `src/screens/WelcomeScreen.js`.
-
- - Firebase phone flow: `auth().signInWithPhoneNumber(fullPhone)` returns a `confirmation` object which the verification screen must call `confirmation.confirm(code)` on.
-
- 4) Build / run / debug (copy-paste)
- - Start Metro: `npm start`
- - Android (emulator/device): `npm run android` (needs JDK 20+ and Android Studio)
- - iOS (macOS only):
-	 - `bundle install` (first time)
-	 - `bundle exec pod install` (after native changes)
-	 - `npm run ios`
- - Tests: `npm test`
- - Lint: `npm run lint`
-
- 5) Project-specific gotchas (do not change these implicitly)
- - OTP flow requires passing the `confirmation` object; missing it breaks verification. See `src/screens/UserSignUp.js` → `OTPVerification.js`.
- - Phone numbers are built with `+91` in signup; do not drop the country code.
- - Repo mixes `.js`, `.ts`, `.tsx` — keep file's existing extension and style when editing.
- - No global state manager: most screens use `useState()`; introducing Context/Redux is a deliberate architectural change.
-
- 6) Tests & CI notes
- - Only a small Jest example exists: [__tests__/App.test.tsx](__tests__/App.test.tsx). Focus tests on critical auth flows (sign-in → confirm) if you add coverage.
-
- 7) Recommended agent behavior when editing
- - Preserve navigation params (`language`, `accountType`, `confirmation`) across screens.
- - Use `useSafeAreaInsets()` rather than platform-specific paddings.
- - Keep UI dependencies minimal — the app currently avoids third-party UI kits.
- - When adding native changes (Android/iOS), remind a human to run `pod install` (iOS) and validate `google-services.json` (Android).
-
- If any of these areas are unclear or you want the agent to expand patterns (e.g., add tests for OTP flow or convert screens to TypeScript), tell me which area to expand.
-
- Last updated: December 2025
+Last updated: December 2025

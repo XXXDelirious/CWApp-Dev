@@ -238,7 +238,7 @@ pipeline {
         }
         
         // ============================================
-        // NEW STAGE: SETUP KEYSTORE (CONDITIONAL)
+        // STAGE 5: SETUP KEYSTORE (CONDITIONAL)
         // ============================================
         stage('Setup Keystore') {
             when {
@@ -275,7 +275,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: CLEAR GRADLE CACHE 
+        // STAGE 6: CLEAR GRADLE CACHE 
         // ============================================
         stage('Clear Gradle Cache') {
             when {
@@ -300,7 +300,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: INSTALL DEPENDENCIES
+        // STAGE 7: INSTALL DEPENDENCIES
         // ============================================
         stage('Install Dependencies') {
             steps {
@@ -339,7 +339,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: SECURITY SCANNING
+        // STAGE 8: SECURITY SCANNING
         // ============================================
         stage('Security Scanning') {
             steps {
@@ -381,7 +381,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: CODE QUALITY
+        // STAGE 9: CODE QUALITY
         // ============================================
         stage('Code Quality') {
             steps {
@@ -420,7 +420,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: UNIT TESTS
+        // STAGE 10: UNIT TESTS
         // ============================================
         stage('Unit Tests') {
             steps {
@@ -468,7 +468,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: CLEAN ANDROID BUILD 
+        // STAGE 11: CLEAN ANDROID BUILD 
         // ============================================
         stage('Clean Android') {
             steps {
@@ -505,7 +505,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: BUILD DEBUG APK (ALWAYS)
+        // STAGE 12: BUILD DEBUG APK (ALWAYS)
         // ============================================
         stage('Build Debug APK') {
             steps {
@@ -552,7 +552,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: BUILD SIGNED RELEASE APK (CONDITIONAL)
+        // STAGE 13: BUILD SIGNED RELEASE APK (CONDITIONAL)
         // ============================================
         stage('Build Signed Release APK') {
             when {
@@ -608,7 +608,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: BUILD UNSIGNED RELEASE APK (DEFAULT)
+        // STAGE 14: BUILD UNSIGNED RELEASE APK (DEFAULT)
         // ============================================
         stage('Build Unsigned Release APK') {
             when {
@@ -683,7 +683,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: APK ANALYSIS
+        // STAGE 15: APK ANALYSIS
         // ============================================
         stage('APK Analysis') {
             steps {
@@ -721,7 +721,7 @@ EOF
         }
         
         // ============================================
-        // STAGE: ARCHIVE & BUILD INFO
+        // STAGE 16: ARCHIVE & BUILD INFO
         // ============================================
         stage('Archive APKs') {
             steps {

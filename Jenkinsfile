@@ -38,18 +38,13 @@ pipeline {
         )
         booleanParam(
             name: 'CLEAN_BUILD',
-            defaultValue: true,
+            defaultValue: true,  // CHANGED: Default to true to prevent cache issues
             description: 'Clean all caches before build'
         )
         booleanParam(
             name: 'CLEAR_GRADLE_CACHE',
             defaultValue: false,
             description: 'Clear Gradle cache (use if build fails with CMake errors)'
-        )
-        booleanParam(
-            name: 'BUILD_SIGNED_RELEASE',
-            defaultValue: false,
-            description: 'Build signed release APK (requires keystore credentials)'
         )
     }
     
@@ -238,44 +233,7 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 5: SETUP KEYSTORE (CONDITIONAL)
-        // ============================================
-        stage('Setup Keystore') {
-            when {
-                expression { params.BUILD_SIGNED_RELEASE == true }
-            }
-            steps {
-                echo '🔑 Setting up release keystore...'
-                withCredentials([
-                    file(credentialsId: 'android-release-keystore', variable: 'KEYSTORE_FILE'),
-                    string(credentialsId: 'keystore-password', variable: 'KEYSTORE_PASSWORD'),
-                    string(credentialsId: 'key-alias', variable: 'KEY_ALIAS'),
-                    string(credentialsId: 'key-password', variable: 'KEY_PASSWORD')
-                ]) {
-                    sh '''
-                        set -e
-                        
-                        # Copy keystore to expected location
-                        mkdir -p android/app
-                        cp $KEYSTORE_FILE android/app/my-release-key.keystore
-                        
-                        # Create keystore.properties
-                        cat > android/keystore.properties << EOF
-storePassword=$KEYSTORE_PASSWORD
-keyPassword=$KEY_PASSWORD
-keyAlias=$KEY_ALIAS
-storeFile=my-release-key.keystore
-EOF
-                        
-                        echo "✅ Keystore configured"
-                        echo "   Location: android/app/my-release-key.keystore"
-                    '''
-                }
-            }
-        }
-        
-        // ============================================
-        // STAGE 6: CLEAR GRADLE CACHE 
+        // NEW STAGE: CLEAR GRADLE CACHE 
         // ============================================
         stage('Clear Gradle Cache') {
             when {
@@ -300,7 +258,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 7: INSTALL DEPENDENCIES
+        // STAGE 5: INSTALL DEPENDENCIES
         // ============================================
         stage('Install Dependencies') {
             steps {
@@ -339,7 +297,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 8: SECURITY SCANNING
+        // STAGE 6: SECURITY SCANNING
         // ============================================
         stage('Security Scanning') {
             steps {
@@ -364,6 +322,7 @@ EOF
                     
                     if [ "$CRITICAL" -gt 0 ]; then
                         echo "⚠️  WARNING: Found $CRITICAL critical vulnerabilities"
+                        # CHANGED: Don't fail build, just warn
                     fi
                     
                     if [ "$HIGH" -gt 5 ]; then
@@ -381,7 +340,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 9: CODE QUALITY
+        // STAGE 7: CODE QUALITY
         // ============================================
         stage('Code Quality') {
             steps {
@@ -420,7 +379,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 10: UNIT TESTS
+        // STAGE 8: UNIT TESTS
         // ============================================
         stage('Unit Tests') {
             steps {
@@ -468,7 +427,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 11: CLEAN ANDROID BUILD 
+        // STAGE 9: CLEAN ANDROID BUILD 
         // ============================================
         stage('Clean Android') {
             steps {
@@ -505,11 +464,58 @@ EOF
         }
         
         // ============================================
-        // STAGE 12: BUILD DEBUG APK (ALWAYS)
+        // STAGE 10: BUILD RELEASE APK 
+        // ============================================
+        stage('Build Release APK') {
+            steps {
+                echo '🔨 Building Android Release APK...'
+                sh '''
+                    set -e
+                    cd android
+                    chmod +x gradlew
+                    
+                    echo "Building release APK..."
+                    
+                    # CRITICAL: Set memory and encoding
+                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+                    
+                    # Build with retry on CMake errors
+                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
+                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
+                        rm -rf ~/.gradle/caches/transforms-*/
+                        rm -rf app/.cxx/
+                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
+                    }
+                    
+                    # Verify APK was created
+                    RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+                    if [ ! -f "$RELEASE_APK" ]; then
+                        echo "❌ ERROR: Release APK not found at $RELEASE_APK"
+                        exit 1
+                    fi
+                    
+                    # Copy to workspace root for easier access
+                    cp "$RELEASE_APK" ../app-release.apk
+                    
+                    # Get APK info
+                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
+                    echo "✅ Release APK built successfully: $APK_SIZE"
+                    echo "   Location: $RELEASE_APK"
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        // ============================================
+        // STAGE 11: BUILD DEBUG APK 
         // ============================================
         stage('Build Debug APK') {
             steps {
-                echo '🔨 Building Android Debug APK (unsigned)...'
+                echo '🔨 Building Android Debug APK...'
                 sh '''
                     set -e
                     cd android
@@ -520,13 +526,8 @@ EOF
                     # Set memory and encoding
                     export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
                     
-                    # Build debug APK (no signing required)
-                    ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log || {
-                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
-                        rm -rf ~/.gradle/caches/transforms-*/
-                        rm -rf app/.cxx/
-                        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log
-                    }
+                    # Build debug APK
+                    ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log
                     
                     # Verify APK was created
                     DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -552,138 +553,7 @@ EOF
         }
         
         // ============================================
-        // STAGE 13: BUILD SIGNED RELEASE APK (CONDITIONAL)
-        // ============================================
-        stage('Build Signed Release APK') {
-            when {
-                expression { params.BUILD_SIGNED_RELEASE == true }
-            }
-            steps {
-                echo '🔨 Building Signed Android Release APK...'
-                sh '''
-                    set -e
-                    cd android
-                    chmod +x gradlew
-                    
-                    echo "Building signed release APK..."
-                    
-                    # Verify keystore exists
-                    if [ ! -f "app/my-release-key.keystore" ]; then
-                        echo "❌ ERROR: Keystore not found. Did the 'Setup Keystore' stage run?"
-                        exit 1
-                    fi
-                    
-                    # CRITICAL: Set memory and encoding
-                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
-                    
-                    # Build signed release APK
-                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
-                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
-                        rm -rf ~/.gradle/caches/transforms-*/
-                        rm -rf app/.cxx/
-                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
-                    }
-                    
-                    # Verify APK was created
-                    RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-                    if [ ! -f "$RELEASE_APK" ]; then
-                        echo "❌ ERROR: Release APK not found at $RELEASE_APK"
-                        exit 1
-                    fi
-                    
-                    # Copy to workspace root
-                    cp "$RELEASE_APK" ../app-release-signed.apk
-                    
-                    # Get APK info
-                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
-                    echo "✅ Signed Release APK built successfully: $APK_SIZE"
-                    echo "   Location: $RELEASE_APK"
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
-                }
-            }
-        }
-        
-        // ============================================
-        // STAGE 14: BUILD UNSIGNED RELEASE APK (DEFAULT)
-        // ============================================
-        stage('Build Unsigned Release APK') {
-            when {
-                expression { params.BUILD_SIGNED_RELEASE == false }
-            }
-            steps {
-                echo '🔨 Building Unsigned Release APK...'
-                sh '''
-                    set -e
-                    cd android
-                    
-                    # Temporarily disable signing in build.gradle
-                    echo "Disabling release signing configuration..."
-                    
-                    # Backup original build.gradle
-                    cp app/build.gradle app/build.gradle.backup
-                    
-                    # Comment out signing config for release
-                    sed -i.bak '/signingConfig signingConfigs.release/s/^/\\/\\//' app/build.gradle || true
-                    
-                    chmod +x gradlew
-                    
-                    echo "Building unsigned release APK..."
-                    
-                    # Set memory and encoding
-                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
-                    
-                    # Build unsigned release APK
-                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
-                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
-                        rm -rf ~/.gradle/caches/transforms-*/
-                        rm -rf app/.cxx/
-                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
-                    }
-                    
-                    # Restore original build.gradle
-                    if [ -f "app/build.gradle.backup" ]; then
-                        mv app/build.gradle.backup app/build.gradle
-                    fi
-                    
-                    # Verify APK was created
-                    RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-                    
-                    # Check both possible names
-                    if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-                        RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-                    fi
-                    
-                    if [ ! -f "$RELEASE_APK" ]; then
-                        echo "❌ ERROR: Release APK not found"
-                        ls -la app/build/outputs/apk/release/ || true
-                        exit 1
-                    fi
-                    
-                    # Copy to workspace root
-                    cp "$RELEASE_APK" ../app-release-unsigned.apk
-                    
-                    # Get APK info
-                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
-                    echo "✅ Unsigned Release APK built successfully: $APK_SIZE"
-                    echo "   Location: $RELEASE_APK"
-                    echo ""
-                    echo "⚠️  NOTE: This APK is UNSIGNED and for testing only"
-                    echo "   For production, re-run with BUILD_SIGNED_RELEASE=true"
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
-                }
-            }
-        }
-        
-        // ============================================
-        // STAGE 15: APK ANALYSIS
+        // STAGE 12: APK ANALYSIS
         // ============================================
         stage('APK Analysis') {
             steps {
@@ -691,37 +561,27 @@ EOF
                 sh '''
                     set -e
                     
-                    echo "=== Debug APK Analysis ==="
-                    if [ -f "app-debug.apk" ]; then
-                        aapt dump badging "app-debug.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
-                        sha256sum app-debug.apk > app-debug.apk.sha256
-                        echo "Debug SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')"
-                    fi
-                    
-                    echo ""
                     echo "=== Release APK Analysis ==="
-                    if [ -f "app-release-signed.apk" ]; then
-                        echo "Signed Release APK:"
-                        aapt dump badging "app-release-signed.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
-                        sha256sum app-release-signed.apk > app-release-signed.apk.sha256
-                        echo "Signed Release SHA256: $(cat app-release-signed.apk.sha256 | awk '{print $1}')"
-                    fi
-                    
-                    if [ -f "app-release-unsigned.apk" ]; then
-                        echo "Unsigned Release APK:"
-                        aapt dump badging "app-release-unsigned.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
-                        sha256sum app-release-unsigned.apk > app-release-unsigned.apk.sha256
-                        echo "Unsigned Release SHA256: $(cat app-release-unsigned.apk.sha256 | awk '{print $1}')"
-                    fi
+                    aapt dump badging "app-release.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
                     
                     echo ""
-                    echo "✅ Analysis completed"
+                    echo "=== Debug APK Analysis ==="
+                    aapt dump badging "app-debug.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
+                    
+                    # Generate checksums
+                    sha256sum app-release.apk > app-release.apk.sha256
+                    sha256sum app-debug.apk > app-debug.apk.sha256
+                    
+                    echo ""
+                    echo "✅ Checksums generated"
+                    echo "Release SHA256: $(cat app-release.apk.sha256 | awk '{print $1}')"
+                    echo "Debug SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')"
                 '''
             }
         }
         
         // ============================================
-        // STAGE 16: ARCHIVE & BUILD INFO
+        // STAGE 13: ARCHIVE & BUILD INFO
         // ============================================
         stage('Archive APKs') {
             steps {
@@ -729,46 +589,21 @@ EOF
                 
                 // Archive APKs
                 archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk', 
-                                fingerprint: true,
-                                allowEmptyArchive: true
+                                fingerprint: true
                 
-                archiveArtifacts artifacts: '*.apk,*.sha256', 
-                                fingerprint: true,
-                                allowEmptyArchive: true
+                archiveArtifacts artifacts: '*.apk,*.sha256', fingerprint: true
                 
                 // Create build info
                 sh '''
                     BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S')
                     
-                    # Check which APKs were built
-                    DEBUG_APK=""
-                    RELEASE_APK=""
-                    RELEASE_TYPE="None"
+                    DEBUG_SIZE=$(ls -lh app-debug.apk | awk '{print $5}')
+                    RELEASE_SIZE=$(ls -lh app-release.apk | awk '{print $5}')
                     
-                    if [ -f "app-debug.apk" ]; then
-                        DEBUG_SIZE=$(ls -lh app-debug.apk | awk '{print $5}')
-                        DEBUG_SHA=$(cat app-debug.apk.sha256 | awk '{print $1}')
-                        DEBUG_APK="✅ Built"
-                    else
-                        DEBUG_APK="❌ Not built"
-                    fi
-                    
-                    if [ -f "app-release-signed.apk" ]; then
-                        RELEASE_SIZE=$(ls -lh app-release-signed.apk | awk '{print $5}')
-                        RELEASE_SHA=$(cat app-release-signed.apk.sha256 | awk '{print $1}')
-                        RELEASE_TYPE="Signed"
-                        RELEASE_APK="app-release-signed.apk"
-                    elif [ -f "app-release-unsigned.apk" ]; then
-                        RELEASE_SIZE=$(ls -lh app-release-unsigned.apk | awk '{print $5}')
-                        RELEASE_SHA=$(cat app-release-unsigned.apk.sha256 | awk '{print $1}')
-                        RELEASE_TYPE="Unsigned (Testing Only)"
-                        RELEASE_APK="app-release-unsigned.apk"
-                    fi
-                    
-                    # Get package info from debug APK
-                    PACKAGE_NAME=$(aapt dump badging app-debug.apk | grep package | awk '{print $2}' | sed "s/name='//g" | sed "s/'//g" || echo "N/A")
-                    VERSION_CODE=$(aapt dump badging app-debug.apk | grep versionCode | awk '{print $3}' | sed "s/versionCode='//g" | sed "s/'//g" || echo "N/A")
-                    VERSION_NAME=$(aapt dump badging app-debug.apk | grep versionName | awk '{print $4}' | sed "s/versionName='//g" | sed "s/'//g" || echo "N/A")
+                    # Get package info
+                    PACKAGE_NAME=$(aapt dump badging app-release.apk | grep package | awk '{print $2}' | sed "s/name='//g" | sed "s/'//g")
+                    VERSION_CODE=$(aapt dump badging app-release.apk | grep versionCode | awk '{print $3}' | sed "s/versionCode='//g" | sed "s/'//g")
+                    VERSION_NAME=$(aapt dump badging app-release.apk | grep versionName | awk '{print $4}' | sed "s/versionName='//g" | sed "s/'//g")
                     
                     cat > build-info.txt << EOF
 ╔════════════════════════════════════════╗
@@ -790,38 +625,35 @@ Version:         ${VERSION_NAME} (${VERSION_CODE})
 
 📱 APK Artifacts:
 ─────────────────────────────────────────
-🔴 Debug APK: ${DEBUG_APK}
-$(if [ -f "app-debug.apk" ]; then echo "   File: app-debug.apk"; echo "   Size: ${DEBUG_SIZE}"; echo "   SHA256: ${DEBUG_SHA}"; fi)
-
-🟢 Release APK: ${RELEASE_TYPE}
-$(if [ -n "$RELEASE_APK" ]; then echo "   File: ${RELEASE_APK}"; echo "   Size: ${RELEASE_SIZE}"; echo "   SHA256: ${RELEASE_SHA}"; fi)
-
-$(if [ "$RELEASE_TYPE" = "Unsigned (Testing Only)" ]; then echo "⚠️  IMPORTANT: Release APK is UNSIGNED"; echo "   This APK is for TESTING ONLY"; echo "   For production builds, run with BUILD_SIGNED_RELEASE=true"; echo "   and configure keystore credentials in Jenkins"; fi)
+🔴 Debug APK (requires Metro bundler):
+   File: app-debug.apk
+   Size: ${DEBUG_SIZE}
+   SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')
+   
+🟢 Release APK (standalone - RECOMMENDED):
+   File: app-release.apk
+   Size: ${RELEASE_SIZE}
+   SHA256: $(cat app-release.apk.sha256 | awk '{print $1}')
 
 Download Links:
 ─────────────────────────────────────────
-$(if [ -f "app-debug.apk" ]; then echo "Debug APK:   ${BUILD_URL}artifact/app-debug.apk"; fi)
-$(if [ -f "app-release-signed.apk" ]; then echo "Signed Release: ${BUILD_URL}artifact/app-release-signed.apk"; fi)
-$(if [ -f "app-release-unsigned.apk" ]; then echo "Unsigned Release: ${BUILD_URL}artifact/app-release-unsigned.apk"; fi)
+Release APK: ${BUILD_URL}artifact/app-release.apk
+Debug APK:   ${BUILD_URL}artifact/app-debug.apk
 
 Installation:
 ─────────────────────────────────────────
-# Verify checksum (if available)
-$(if [ -f "app-debug.apk" ]; then echo "sha256sum -c app-debug.apk.sha256"; fi)
+# Verify checksum
+sha256sum -c app-release.apk.sha256
 
 # Install via ADB
-$(if [ -f "app-debug.apk" ]; then echo "adb install app-debug.apk"; fi)
-$(if [ -f "app-release-unsigned.apk" ]; then echo "adb install app-release-unsigned.apk"; fi)
-$(if [ -f "app-release-signed.apk" ]; then echo "adb install app-release-signed.apk"; fi)
+adb install app-release.apk
 
 ╚════════════════════════════════════════╝
 EOF
                     cat build-info.txt
                 '''
                 
-                archiveArtifacts artifacts: 'build-info.txt,audit-*.json', 
-                                fingerprint: true,
-                                allowEmptyArchive: true
+                archiveArtifacts artifacts: 'build-info.txt,audit-*.json', fingerprint: true
             }
         }
     }
@@ -841,7 +673,6 @@ EOF
             sh '''
                 echo "🧹 Cleaning sensitive files..."
                 rm -f android/app/google-services.json
-                rm -f android/app/my-release-key.keystore
                 rm -f android/app/release.keystore
                 rm -f android/keystore.properties
                 find . -name "*.keystore" -delete 2>/dev/null || true
@@ -868,18 +699,8 @@ EOF
                 echo "✅ BUILD SUCCESSFUL!"
                 echo ""
                 echo "📱 APK Downloads:"
-                
-                if (fileExists('app-debug.apk')) {
-                    echo "   🔴 Debug APK: ${BUILD_URL}artifact/app-debug.apk"
-                }
-                
-                if (params.BUILD_SIGNED_RELEASE && fileExists('app-release-signed.apk')) {
-                    echo "   🟢 Signed Release APK: ${BUILD_URL}artifact/app-release-signed.apk"
-                } else if (fileExists('app-release-unsigned.apk')) {
-                    echo "   🟡 Unsigned Release APK: ${BUILD_URL}artifact/app-release-unsigned.apk"
-                    echo "   ⚠️  This is unsigned - for testing only!"
-                }
-                
+                echo "   🟢 Release APK: ${BUILD_URL}artifact/app-release.apk"
+                echo "   🔴 Debug APK:   ${BUILD_URL}artifact/app-debug.apk"
                 echo ""
                 echo "📄 Build Info: ${BUILD_URL}artifact/build-info.txt"
                 echo "⏱️  Duration: ${durationMinutes} minutes"
@@ -894,7 +715,6 @@ EOF
             echo "1. Re-run build with 'CLEAR_GRADLE_CACHE' enabled"
             echo "2. Check ESLint errors in the logs"
             echo "3. Verify google-services.json credential is configured"
-            echo "4. If building signed release, ensure keystore credentials are set up"
         }
         
         unstable {

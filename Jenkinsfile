@@ -39,10 +39,13 @@ pipeline {
                     java -version
                     node -v
                     npm -v
+                    echo "ANDROID_HOME=$ANDROID_HOME"
+                    which sdkmanager
                     sdkmanager --list > /dev/null
                 '''
             }
         }
+
 
         /* -------------------- */
         stage('Install Dependencies') {

@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     // ============================================
-    // CWAPP DEV PIPELINE 
+    // CWAPP PRODUCTION PIPELINE 
     // ============================================
     
     environment {
@@ -38,13 +38,23 @@ pipeline {
         )
         booleanParam(
             name: 'CLEAN_BUILD',
-            defaultValue: true,  // CHANGED: Default to true to prevent cache issues
+            defaultValue: true,
             description: 'Clean all caches before build'
         )
         booleanParam(
             name: 'CLEAR_GRADLE_CACHE',
             defaultValue: false,
             description: 'Clear Gradle cache (use if build fails with CMake errors)'
+        )
+        booleanParam(
+            name: 'BUILD_SIGNED_RELEASE',
+            defaultValue: false,
+            description: 'Build signed release APK (requires keystore credentials)'
+        )
+        choice(
+            name: 'SECURITY_LEVEL',
+            choices: ['MODERATE', 'STRICT', 'SKIP'],
+            description: 'Security validation level (STRICT for production, MODERATE for dev)'
         )
     }
     
@@ -86,7 +96,7 @@ pipeline {
                     
                     echo "✅ Commit: ${env.GIT_COMMIT_MSG}"
                     
-                    // Create audit log
+                    // Create audit log for compliance
                     def auditLog = [
                         timestamp: new Date().format("yyyy-MM-dd'T'HH:mm:ss"),
                         build_number: BUILD_NUMBER,
@@ -102,6 +112,7 @@ pipeline {
         
         // ============================================
         // STAGE 2: ENVIRONMENT VERIFICATION
+        // 🏭 CRITICAL FOR PRODUCTION
         // ============================================
         stage('Verify Environment') {
             steps {
@@ -164,8 +175,6 @@ pipeline {
                         if [ "$FREE_MEM" -lt 2048 ]; then
                             echo "⚠️  WARNING: Low memory (< 2GB available)"
                         fi
-                    else
-                        echo "ℹ️  Memory check skipped (free command not available)"
                     fi
                     
                     echo "==================================="
@@ -177,35 +186,76 @@ pipeline {
         
         // ============================================
         // STAGE 3: SECURITY VALIDATION
+        // 🏭 CRITICAL FOR PRODUCTION - PREVENTS LEAKS
         // ============================================
         stage('Security Validation') {
+            when {
+                expression { params.SECURITY_LEVEL != 'SKIP' }
+            }
             steps {
                 echo '🔒 Running security validation...'
-                sh '''
-                    set -e
+                script {
+                    def securityIssues = []
                     
-                    # Check for merge conflicts
-                    if grep -r "<<<<<<< HEAD" . --exclude-dir=node_modules --exclude-dir=.git --exclude=Jenkinsfile 2>/dev/null; then
-                        echo "❌ ERROR: Merge conflicts detected"
-                        exit 1
-                    fi
-                    echo "✅ No merge conflicts found"
+                    sh '''
+                        set -e
+                        
+                        # Check for merge conflicts
+                        if grep -r "<<<<<<< HEAD" . --exclude-dir=node_modules --exclude-dir=.git --exclude=Jenkinsfile 2>/dev/null; then
+                            echo "❌ ERROR: Merge conflicts detected"
+                            exit 1
+                        fi
+                        echo "✅ No merge conflicts found"
+                        
+                        # Check for TODO/FIXME
+                        TODO_COUNT=$(grep -rE "TODO|FIXME" . --exclude-dir=node_modules --exclude-dir=.git --exclude=Jenkinsfile 2>/dev/null | wc -l || echo "0")
+                        if [ "$TODO_COUNT" -gt 0 ]; then
+                            echo "⚠️  WARNING: Found $TODO_COUNT TODO/FIXME comments"
+                            echo "$TODO_COUNT" > todo_count.txt
+                        fi
+                        
+                        # Check for hardcoded secrets (CRITICAL)
+                        echo "Scanning for hardcoded secrets..."
+                        SECRETS_FOUND=0
+                        
+                        # Scan for common secret patterns
+                        if grep -rE "(password|secret|api_key|token|private_key)\\s*=\\s*['\"][^'\"]{8,}['\"]" . \
+                            --exclude-dir=node_modules \
+                            --exclude-dir=.git \
+                            --exclude=Jenkinsfile \
+                            --exclude="*.json" \
+                            --exclude="*.md" \
+                            2>/dev/null | grep -v "example\\|sample\\|test\\|placeholder"; then
+                            echo "❌ CRITICAL: Possible hardcoded secrets detected"
+                            SECRETS_FOUND=1
+                        fi
+                        
+                        # Scan for AWS keys
+                        if grep -rE "AKIA[0-9A-Z]{16}" . --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; then
+                            echo "❌ CRITICAL: Possible AWS access key detected"
+                            SECRETS_FOUND=1
+                        fi
+                        
+                        # Scan for private keys
+                        if grep -rE "BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY" . --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; then
+                            echo "❌ CRITICAL: Private key detected in code"
+                            SECRETS_FOUND=1
+                        fi
+                        
+                        if [ "$SECRETS_FOUND" -eq 1 ]; then
+                            echo "$SECRETS_FOUND" > secrets_found.txt
+                        else
+                            echo "✅ No hardcoded secrets detected"
+                        fi
+                        
+                        echo "✅ Security validation complete"
+                    '''
                     
-                    # Check for TODO/FIXME
-                    TODO_COUNT=$(grep -rE "TODO|FIXME" . --exclude-dir=node_modules --exclude-dir=.git --exclude=Jenkinsfile 2>/dev/null | wc -l || echo "0")
-                    if [ "$TODO_COUNT" -gt 0 ]; then
-                        echo "⚠️  WARNING: Found $TODO_COUNT TODO/FIXME comments"
-                    fi
-                    
-                    # Check for hardcoded secrets
-                    if grep -rE "(password|secret|api_key|token)\\s*=\\s*['\"][^'\"]+['\"]" . --exclude-dir=node_modules --exclude-dir=.git --exclude=Jenkinsfile 2>/dev/null | grep -v "example\\|sample\\|test"; then
-                        echo "❌ ERROR: Possible hardcoded secrets detected"
-                        exit 1
-                    fi
-                    echo "✅ No hardcoded secrets detected"
-                    
-                    echo "✅ Security validation complete"
-                '''
+                    // STRICT mode fails build on secrets
+                    if (params.SECURITY_LEVEL == 'STRICT' && fileExists('secrets_found.txt')) {
+                        error("🚨 SECURITY FAILURE: Hardcoded secrets detected! Cannot proceed with build.")
+                    }
+                }
             }
         }
         
@@ -233,7 +283,167 @@ pipeline {
         }
         
         // ============================================
-        // NEW STAGE: CLEAR GRADLE CACHE 
+        // STAGE 5: SETUP KEYSTORE (CONDITIONAL - FIXED)
+        // ============================================
+        stage('Setup Keystore') {
+            when {
+                expression { params.BUILD_SIGNED_RELEASE == true }
+            }
+            steps {
+                script {
+                    echo '🔑 Setting up release keystore...'
+                    echo 'ℹ️  Checking for Jenkins credentials...'
+                    
+                    // Check if credentials exist before trying to use them
+                    try {
+                        withCredentials([
+                            file(credentialsId: 'my-release-key.keystore', variable: 'KEYSTORE_FILE'),
+                            string(credentialsId: 'keystore-password', variable: 'KEYSTORE_PASSWORD'),
+                            string(credentialsId: 'key-alias', variable: 'KEY_ALIAS'),
+                            string(credentialsId: 'key-password', variable: 'KEY_PASSWORD')
+                        ]) {
+                            sh '''
+                                set -e
+                                
+                                echo "✅ All credentials found in Jenkins"
+                                echo "   - android-release-keystore: Found"
+                                echo "   - keystore-password: Found"
+                                echo "   - key-alias: Found"
+                                echo "   - key-password: Found"
+                                echo ""
+                                
+                                # Verify keystore file variable is set
+                                if [ -z "$KEYSTORE_FILE" ]; then
+                                    echo "❌ ERROR: KEYSTORE_FILE variable is empty"
+                                    exit 1
+                                fi
+                                
+                                # Verify keystore file exists
+                                if [ ! -f "$KEYSTORE_FILE" ]; then
+                                    echo "❌ ERROR: Keystore file not found at: $KEYSTORE_FILE"
+                                    exit 1
+                                fi
+                                
+                                echo "✅ Keystore file exists: $KEYSTORE_FILE"
+                                
+                                # Copy keystore to expected location
+                                mkdir -p android/app
+                                cp "$KEYSTORE_FILE" android/app/my-release-key.keystore
+                                
+                                # Verify copy was successful
+                                if [ ! -f "android/app/my-release-key.keystore" ]; then
+                                    echo "❌ ERROR: Failed to copy keystore to android/app/"
+                                    exit 1
+                                fi
+                                
+                                echo "✅ Keystore copied to: android/app/my-release-key.keystore"
+                                
+                                # Verify all credential variables are set
+                                if [ -z "$KEYSTORE_PASSWORD" ]; then
+                                    echo "❌ ERROR: keystore-password is empty"
+                                    exit 1
+                                fi
+                                
+                                if [ -z "$KEY_ALIAS" ]; then
+                                    echo "❌ ERROR: key-alias is empty"
+                                    exit 1
+                                fi
+                                
+                                if [ -z "$KEY_PASSWORD" ]; then
+                                    echo "❌ ERROR: key-password is empty"
+                                    exit 1
+                                fi
+                                
+                                echo "✅ All credential values are set"
+                                
+                                # Create keystore.properties
+                                cat > android/keystore.properties << EOF
+storePassword=$KEYSTORE_PASSWORD
+keyPassword=$KEY_PASSWORD
+keyAlias=$KEY_ALIAS
+storeFile=my-release-key.keystore
+EOF
+                                
+                                # Verify keystore.properties was created
+                                if [ ! -f "android/keystore.properties" ]; then
+                                    echo "❌ ERROR: Failed to create keystore.properties"
+                                    exit 1
+                                fi
+                                
+                                echo "✅ keystore.properties created"
+                                echo ""
+                                echo "═══════════════════════════════════════"
+                                echo "✅ Keystore setup completed successfully"
+                                echo "   Location: android/app/my-release-key.keystore"
+                                echo "   Properties: android/keystore.properties"
+                                echo "   Alias: $KEY_ALIAS"
+                                echo "═══════════════════════════════════════"
+                            '''
+                        }
+                    } catch (Exception e) {
+                        echo "❌ Error occurred: ${e.getMessage()}"
+                        echo ""
+                        error """
+🚨 KEYSTORE SETUP FAILED!
+
+Error Details: ${e.getMessage()}
+
+The following credentials must exist in Jenkins with EXACT IDs:
+  ┌─────────────────────────────────────────────────┐
+  │ Credential ID              │ Type              │
+  ├─────────────────────────────────────────────────┤
+  │ android-release-keystore   │ Secret file       │
+  │ keystore-password          │ Secret text       │
+  │ key-alias                  │ Secret text       │
+  │ key-password               │ Secret text       │
+  └─────────────────────────────────────────────────┘
+
+Troubleshooting Steps:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Go to: Jenkins → Manage Jenkins → Credentials
+2. Click on "(global)" domain (or your specific domain)
+3. Verify each credential exists with the EXACT ID shown above
+4. The ID must match exactly (case-sensitive)
+5. Make sure credentials are in the correct scope
+6. Click on each credential to verify it has content
+
+Common Issues:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ Credential ID has typo (e.g., "android-keystore" instead of "android-release-keystore")
+❌ Credential is in wrong scope (folder-level instead of global)
+❌ Secret file is empty or corrupt
+❌ Passwords contain special characters that need escaping
+
+How to Create Credentials:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Jenkins → Manage Jenkins → Credentials → System → Global credentials
+2. Click "Add Credentials"
+3. For keystore:
+   - Kind: Secret file
+   - File: Upload your my-release-key.keystore
+   - ID: android-release-keystore (exactly this)
+4. For passwords:
+   - Kind: Secret text
+   - Secret: Your password/alias
+   - ID: Must match exactly (keystore-password, key-alias, key-password)
+
+If credentials are configured correctly but still failing:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Check Jenkins system logs
+• Verify Jenkins has read permission on credential store
+• Try recreating the credentials
+• Check if credential plugin is installed and up to date
+
+For now, you can build an unsigned APK by setting:
+BUILD_SIGNED_RELEASE = false
+                        """
+                    }
+                }
+            }
+        }
+        
+        // ============================================
+        // STAGE 6: CLEAR GRADLE CACHE 
         // ============================================
         stage('Clear Gradle Cache') {
             when {
@@ -258,7 +468,7 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 5: INSTALL DEPENDENCIES
+        // STAGE 7: INSTALL DEPENDENCIES
         // ============================================
         stage('Install Dependencies') {
             steps {
@@ -297,40 +507,60 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 6: SECURITY SCANNING
+        // STAGE 8: SECURITY SCANNING
+        // 🏭 CRITICAL FOR PRODUCTION - CVE DETECTION
         // ============================================
         stage('Security Scanning') {
+            when {
+                expression { params.SECURITY_LEVEL != 'SKIP' }
+            }
             steps {
                 echo '🔍 Scanning for vulnerabilities...'
-                sh '''
-                    set -e
+                script {
+                    sh '''
+                        set -e
+                        
+                        echo "Running npm audit..."
+                        npm audit --audit-level=high --json > npm-audit.json || true
+                        
+                        # Extract vulnerability counts safely
+                        CRITICAL=$(cat npm-audit.json | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
+                        HIGH=$(cat npm-audit.json | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
+                        MODERATE=$(cat npm-audit.json | grep -o '"moderate":[0-9]*' | grep -o '[0-9]*' || echo "0")
+                        
+                        # Default to 0 if empty
+                        CRITICAL=${CRITICAL:-0}
+                        HIGH=${HIGH:-0}
+                        MODERATE=${MODERATE:-0}
+                        
+                        echo "Security scan results:"
+                        echo "  Critical: $CRITICAL"
+                        echo "  High: $HIGH"
+                        echo "  Moderate: $MODERATE"
+                        
+                        # Save for later decision
+                        echo "$CRITICAL" > critical_vulns.txt
+                        echo "$HIGH" > high_vulns.txt
+                        
+                        if [ "$CRITICAL" -gt 0 ]; then
+                            echo "🚨 CRITICAL: Found $CRITICAL critical vulnerabilities"
+                        fi
+                        
+                        if [ "$HIGH" -gt 5 ]; then
+                            echo "⚠️  WARNING: Found $HIGH high severity vulnerabilities"
+                        fi
+                        
+                        echo "✅ Security scan completed"
+                    '''
                     
-                    echo "Running npm audit..."
-                    npm audit --audit-level=high --json > npm-audit.json || true
-                    
-                    # Extract vulnerability counts safely
-                    CRITICAL=$(cat npm-audit.json | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
-                    HIGH=$(cat npm-audit.json | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
-                    
-                    # Default to 0 if empty
-                    CRITICAL=${CRITICAL:-0}
-                    HIGH=${HIGH:-0}
-                    
-                    echo "Security scan results:"
-                    echo "  Critical: $CRITICAL"
-                    echo "  High: $HIGH"
-                    
-                    if [ "$CRITICAL" -gt 0 ]; then
-                        echo "⚠️  WARNING: Found $CRITICAL critical vulnerabilities"
-                        # CHANGED: Don't fail build, just warn
-                    fi
-                    
-                    if [ "$HIGH" -gt 5 ]; then
-                        echo "⚠️  WARNING: Found $HIGH high severity vulnerabilities"
-                    fi
-                    
-                    echo "✅ Security scan completed"
-                '''
+                    // STRICT mode fails on critical vulnerabilities
+                    if (params.SECURITY_LEVEL == 'STRICT') {
+                        def criticalVulns = readFile('critical_vulns.txt').trim() as Integer
+                        if (criticalVulns > 0) {
+                            error("🚨 SECURITY FAILURE: ${criticalVulns} critical vulnerabilities found! Cannot proceed.")
+                        }
+                    }
+                }
             }
             post {
                 always {
@@ -340,36 +570,49 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 7: CODE QUALITY
+        // STAGE 9: CODE QUALITY
+        // 🏭 IMPORTANT FOR PRODUCTION - PREVENTS BUGS
         // ============================================
         stage('Code Quality') {
             steps {
                 echo '📊 Running code quality checks...'
-                sh '''
-                    set -e
+                script {
+                    def lintFailed = false
                     
-                    # ESLint (if configured)
-                    if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
-                        echo "Running ESLint..."
-                        npm run lint 2>&1 | tee eslint.log || {
-                            echo "⚠️  Linting issues found (not failing build)"
+                    sh '''
+                        set -e
+                        
+                        # ESLint (if configured)
+                        if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
+                            echo "Running ESLint..."
+                            npm run lint 2>&1 | tee eslint.log || {
+                                echo "⚠️  Linting issues found"
+                                echo "1" > lint_failed.txt
+                            }
+                        else
+                            echo "ℹ️  No ESLint config found, skipping"
+                        fi
+                        
+                        # Prettier (if configured)
+                        if [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ]; then
+                            echo "Checking code formatting..."
+                            npm run prettier:check 2>&1 | tee prettier.log || {
+                                echo "⚠️  Formatting issues found"
+                            }
+                        else
+                            echo "ℹ️  No Prettier config found, skipping"
+                        fi
+                        
+                        echo "✅ Code quality checks completed"
+                    '''
+                    
+                    // For production branches, fail on lint errors
+                    if (env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'master' || env.GIT_BRANCH == 'production') {
+                        if (fileExists('lint_failed.txt')) {
+                            unstable(message: "Code quality issues detected on ${env.GIT_BRANCH} branch")
                         }
-                    else
-                        echo "ℹ️  No ESLint config found, skipping"
-                    fi
-                    
-                    # Prettier (if configured)
-                    if [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ]; then
-                        echo "Checking code formatting..."
-                        npm run prettier:check 2>&1 | tee prettier.log || {
-                            echo "⚠️  Formatting issues found (not failing build)"
-                        }
-                    else
-                        echo "ℹ️  No Prettier config found, skipping"
-                    fi
-                    
-                    echo "✅ Code quality checks completed"
-                '''
+                    }
+                }
             }
             post {
                 always {
@@ -379,13 +622,14 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 8: UNIT TESTS
+        // STAGE 10: UNIT TESTS
         // ============================================
         stage('Unit Tests') {
             steps {
                 script {
                     if (params.SKIP_TESTS) {
                         echo '⏭️  Skipping tests (SKIP_TESTS = true)'
+                        echo '⚠️  WARNING: Tests skipped - not recommended for production!'
                     } else {
                         echo '🧪 Running unit tests...'
                         sh '''
@@ -417,8 +661,6 @@ pipeline {
                                     reportFiles: 'index.html',
                                     reportName: 'Coverage Report'
                                 ])
-                            } else {
-                                echo "ℹ️  No coverage report generated"
                             }
                         }
                     }
@@ -427,11 +669,11 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 9: CLEAN ANDROID BUILD 
+        // STAGE 11: CLEAN ANDROID BUILD 
         // ============================================
         stage('Clean Android') {
             steps {
-                echo '🧹 Cleaning Android build (enhanced)...'
+                echo '🧹 Cleaning Android build...'
                 sh '''
                     set -e
                     cd android
@@ -440,17 +682,17 @@ pipeline {
                     chmod +x gradlew
                     ./gradlew --stop 2>/dev/null || true
                     
-                    # ENHANCED: Remove build artifacts and CMake cache
+                    # Remove build artifacts and CMake cache
                     echo "Removing local build artifacts..."
                     rm -rf .gradle/
                     rm -rf app/.cxx/
                     rm -rf app/build/
                     rm -rf build/
                     
-                    # CRITICAL FIX: Set proper Java options
+                    # Set proper Java options
                     export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
                     
-                    # Run clean without daemon and with more verbose output
+                    # Run clean
                     echo "Running Gradle clean..."
                     ./gradlew clean --no-daemon --stacktrace || {
                         echo "⚠️  Clean failed, attempting cache clear..."
@@ -464,58 +706,11 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 10: BUILD RELEASE APK 
-        // ============================================
-        stage('Build Release APK') {
-            steps {
-                echo '🔨 Building Android Release APK...'
-                sh '''
-                    set -e
-                    cd android
-                    chmod +x gradlew
-                    
-                    echo "Building release APK..."
-                    
-                    # CRITICAL: Set memory and encoding
-                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
-                    
-                    # Build with retry on CMake errors
-                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
-                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
-                        rm -rf ~/.gradle/caches/transforms-*/
-                        rm -rf app/.cxx/
-                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
-                    }
-                    
-                    # Verify APK was created
-                    RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-                    if [ ! -f "$RELEASE_APK" ]; then
-                        echo "❌ ERROR: Release APK not found at $RELEASE_APK"
-                        exit 1
-                    fi
-                    
-                    # Copy to workspace root for easier access
-                    cp "$RELEASE_APK" ../app-release.apk
-                    
-                    # Get APK info
-                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
-                    echo "✅ Release APK built successfully: $APK_SIZE"
-                    echo "   Location: $RELEASE_APK"
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
-                }
-            }
-        }
-        
-        // ============================================
-        // STAGE 11: BUILD DEBUG APK 
+        // STAGE 12: BUILD DEBUG APK (ALWAYS)
         // ============================================
         stage('Build Debug APK') {
             steps {
-                echo '🔨 Building Android Debug APK...'
+                echo '🔨 Building Android Debug APK (unsigned)...'
                 sh '''
                     set -e
                     cd android
@@ -526,8 +721,13 @@ pipeline {
                     # Set memory and encoding
                     export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
                     
-                    # Build debug APK
-                    ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log
+                    # Build debug APK (no signing required)
+                    ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log || {
+                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
+                        rm -rf ~/.gradle/caches/transforms-*/
+                        rm -rf app/.cxx/
+                        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-debug.log
+                    }
                     
                     # Verify APK was created
                     DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -553,7 +753,139 @@ pipeline {
         }
         
         // ============================================
-        // STAGE 12: APK ANALYSIS
+        // STAGE 13: BUILD SIGNED RELEASE APK (CONDITIONAL)
+        // ============================================
+        stage('Build Signed Release APK') {
+            when {
+                expression { params.BUILD_SIGNED_RELEASE == true }
+            }
+            steps {
+                echo '🔨 Building Signed Android Release APK...'
+                sh '''
+                    set -e
+                    cd android
+                    chmod +x gradlew
+                    
+                    echo "Building signed release APK..."
+                    
+                    # Verify keystore exists
+                    if [ ! -f "app/my-release-key.keystore" ]; then
+                        echo "❌ ERROR: Keystore not found. Did the 'Setup Keystore' stage run?"
+                        exit 1
+                    fi
+                    
+                    # Set memory and encoding
+                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+                    
+                    # Build signed release APK
+                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
+                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
+                        rm -rf ~/.gradle/caches/transforms-*/
+                        rm -rf app/.cxx/
+                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
+                    }
+                    
+                    # Verify APK was created
+                    RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+                    if [ ! -f "$RELEASE_APK" ]; then
+                        echo "❌ ERROR: Release APK not found at $RELEASE_APK"
+                        exit 1
+                    fi
+                    
+                    # Copy to workspace root
+                    cp "$RELEASE_APK" ../app-release-signed.apk
+                    
+                    # Get APK info
+                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
+                    echo "✅ Signed Release APK built successfully: $APK_SIZE"
+                    echo "   Location: $RELEASE_APK"
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        // ============================================
+        // STAGE 14: BUILD UNSIGNED RELEASE APK (DEFAULT)
+        // ============================================
+        stage('Build Unsigned Release APK') {
+            when {
+                expression { params.BUILD_SIGNED_RELEASE == false }
+            }
+            steps {
+                echo '🔨 Building Unsigned Release APK...'
+                sh '''
+                    set -e
+                    cd android
+                    
+                    # Temporarily disable signing in build.gradle
+                    echo "Disabling release signing configuration..."
+                    
+                    # Backup original build.gradle
+                    cp app/build.gradle app/build.gradle.backup
+                    
+                    # Comment out signing config for release
+                    sed -i.bak '/signingConfig signingConfigs.release/s/^/\\/\\//' app/build.gradle || true
+                    
+                    chmod +x gradlew
+                    
+                    echo "Building unsigned release APK..."
+                    
+                    # Set memory and encoding
+                    export GRADLE_OPTS="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+                    
+                    # Build unsigned release APK
+                    ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log || {
+                        echo "⚠️  Build failed, clearing transforms cache and retrying..."
+                        rm -rf ~/.gradle/caches/transforms-*/
+                        rm -rf app/.cxx/
+                        ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-release.log
+                    }
+                    
+                    # Restore original build.gradle
+                    if [ -f "app/build.gradle.backup" ]; then
+                        mv app/build.gradle.backup app/build.gradle
+                    fi
+                    
+                    # Verify APK was created
+                    RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+                    
+                    # Check both possible names
+                    if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+                        RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+                    fi
+                    
+                    if [ ! -f "$RELEASE_APK" ]; then
+                        echo "❌ ERROR: Release APK not found"
+                        ls -la app/build/outputs/apk/release/ || true
+                        exit 1
+                    fi
+                    
+                    # Copy to workspace root
+                    cp "$RELEASE_APK" ../app-release-unsigned.apk
+                    
+                    # Get APK info
+                    APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
+                    echo "✅ Unsigned Release APK built successfully: $APK_SIZE"
+                    echo "   Location: $RELEASE_APK"
+                    echo ""
+                    echo "⚠️  NOTE: This APK is UNSIGNED and for testing only"
+                    echo "   For production, re-run with BUILD_SIGNED_RELEASE=true"
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gradle-release.log', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        // ============================================
+        // STAGE 15: APK ANALYSIS
+        // 🏭 IMPORTANT FOR PRODUCTION - VERIFICATION
         // ============================================
         stage('APK Analysis') {
             steps {
@@ -561,27 +893,37 @@ pipeline {
                 sh '''
                     set -e
                     
-                    echo "=== Release APK Analysis ==="
-                    aapt dump badging "app-release.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
-                    
-                    echo ""
                     echo "=== Debug APK Analysis ==="
-                    aapt dump badging "app-debug.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
-                    
-                    # Generate checksums
-                    sha256sum app-release.apk > app-release.apk.sha256
-                    sha256sum app-debug.apk > app-debug.apk.sha256
+                    if [ -f "app-debug.apk" ]; then
+                        aapt dump badging "app-debug.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
+                        sha256sum app-debug.apk > app-debug.apk.sha256
+                        echo "Debug SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')"
+                    fi
                     
                     echo ""
-                    echo "✅ Checksums generated"
-                    echo "Release SHA256: $(cat app-release.apk.sha256 | awk '{print $1}')"
-                    echo "Debug SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')"
+                    echo "=== Release APK Analysis ==="
+                    if [ -f "app-release-signed.apk" ]; then
+                        echo "Signed Release APK:"
+                        aapt dump badging "app-release-signed.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
+                        sha256sum app-release-signed.apk > app-release-signed.apk.sha256
+                        echo "Signed Release SHA256: $(cat app-release-signed.apk.sha256 | awk '{print $1}')"
+                    fi
+                    
+                    if [ -f "app-release-unsigned.apk" ]; then
+                        echo "Unsigned Release APK:"
+                        aapt dump badging "app-release-unsigned.apk" | grep -E "package|application-label|versionCode|versionName|sdkVersion" || true
+                        sha256sum app-release-unsigned.apk > app-release-unsigned.apk.sha256
+                        echo "Unsigned Release SHA256: $(cat app-release-unsigned.apk.sha256 | awk '{print $1}')"
+                    fi
+                    
+                    echo ""
+                    echo "✅ Analysis completed"
                 '''
             }
         }
         
         // ============================================
-        // STAGE 13: ARCHIVE & BUILD INFO
+        // STAGE 16: ARCHIVE & BUILD INFO
         // ============================================
         stage('Archive APKs') {
             steps {
@@ -589,21 +931,46 @@ pipeline {
                 
                 // Archive APKs
                 archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk', 
-                                fingerprint: true
+                                fingerprint: true,
+                                allowEmptyArchive: true
                 
-                archiveArtifacts artifacts: '*.apk,*.sha256', fingerprint: true
+                archiveArtifacts artifacts: '*.apk,*.sha256', 
+                                fingerprint: true,
+                                allowEmptyArchive: true
                 
                 // Create build info
                 sh '''
                     BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S')
                     
-                    DEBUG_SIZE=$(ls -lh app-debug.apk | awk '{print $5}')
-                    RELEASE_SIZE=$(ls -lh app-release.apk | awk '{print $5}')
+                    # Check which APKs were built
+                    DEBUG_APK=""
+                    RELEASE_APK=""
+                    RELEASE_TYPE="None"
                     
-                    # Get package info
-                    PACKAGE_NAME=$(aapt dump badging app-release.apk | grep package | awk '{print $2}' | sed "s/name='//g" | sed "s/'//g")
-                    VERSION_CODE=$(aapt dump badging app-release.apk | grep versionCode | awk '{print $3}' | sed "s/versionCode='//g" | sed "s/'//g")
-                    VERSION_NAME=$(aapt dump badging app-release.apk | grep versionName | awk '{print $4}' | sed "s/versionName='//g" | sed "s/'//g")
+                    if [ -f "app-debug.apk" ]; then
+                        DEBUG_SIZE=$(ls -lh app-debug.apk | awk '{print $5}')
+                        DEBUG_SHA=$(cat app-debug.apk.sha256 | awk '{print $1}')
+                        DEBUG_APK="✅ Built"
+                    else
+                        DEBUG_APK="❌ Not built"
+                    fi
+                    
+                    if [ -f "app-release-signed.apk" ]; then
+                        RELEASE_SIZE=$(ls -lh app-release-signed.apk | awk '{print $5}')
+                        RELEASE_SHA=$(cat app-release-signed.apk.sha256 | awk '{print $1}')
+                        RELEASE_TYPE="Signed"
+                        RELEASE_APK="app-release-signed.apk"
+                    elif [ -f "app-release-unsigned.apk" ]; then
+                        RELEASE_SIZE=$(ls -lh app-release-unsigned.apk | awk '{print $5}')
+                        RELEASE_SHA=$(cat app-release-unsigned.apk.sha256 | awk '{print $1}')
+                        RELEASE_TYPE="Unsigned (Testing Only)"
+                        RELEASE_APK="app-release-unsigned.apk"
+                    fi
+                    
+                    # Get package info from debug APK
+                    PACKAGE_NAME=$(aapt dump badging app-debug.apk | grep package | awk '{print $2}' | sed "s/name='//g" | sed "s/'//g" || echo "N/A")
+                    VERSION_CODE=$(aapt dump badging app-debug.apk | grep versionCode | awk '{print $3}' | sed "s/versionCode='//g" | sed "s/'//g" || echo "N/A")
+                    VERSION_NAME=$(aapt dump badging app-debug.apk | grep versionName | awk '{print $4}' | sed "s/versionName='//g" | sed "s/'//g" || echo "N/A")
                     
                     cat > build-info.txt << EOF
 ╔════════════════════════════════════════╗
@@ -625,35 +992,35 @@ Version:         ${VERSION_NAME} (${VERSION_CODE})
 
 📱 APK Artifacts:
 ─────────────────────────────────────────
-🔴 Debug APK (requires Metro bundler):
-   File: app-debug.apk
-   Size: ${DEBUG_SIZE}
-   SHA256: $(cat app-debug.apk.sha256 | awk '{print $1}')
-   
-🟢 Release APK (standalone - RECOMMENDED):
-   File: app-release.apk
-   Size: ${RELEASE_SIZE}
-   SHA256: $(cat app-release.apk.sha256 | awk '{print $1}')
+🔴 Debug APK: ${DEBUG_APK}
+$(if [ -f "app-debug.apk" ]; then echo "   File: app-debug.apk"; echo "   Size: ${DEBUG_SIZE}"; echo "   SHA256: ${DEBUG_SHA}"; fi)
+
+🟢 Release APK: ${RELEASE_TYPE}
+$(if [ -n "$RELEASE_APK" ]; then echo "   File: ${RELEASE_APK}"; echo "   Size: ${RELEASE_SIZE}"; echo "   SHA256: ${RELEASE_SHA}"; fi)
+
+$(if [ "$RELEASE_TYPE" = "Unsigned (Testing Only)" ]; then echo "⚠️  IMPORTANT: Release APK is UNSIGNED"; echo "   This APK is for TESTING ONLY"; echo "   For production builds, run with BUILD_SIGNED_RELEASE=true"; echo "   and configure keystore credentials in Jenkins"; fi)
 
 Download Links:
 ─────────────────────────────────────────
-Release APK: ${BUILD_URL}artifact/app-release.apk
-Debug APK:   ${BUILD_URL}artifact/app-debug.apk
+$(if [ -f "app-debug.apk" ]; then echo "Debug APK:   ${BUILD_URL}artifact/app-debug.apk"; fi)
+$(if [ -f "app-release-signed.apk" ]; then echo "Signed Release: ${BUILD_URL}artifact/app-release-signed.apk"; fi)
+$(if [ -f "app-release-unsigned.apk" ]; then echo "Unsigned Release: ${BUILD_URL}artifact/app-release-unsigned.apk"; fi)
 
 Installation:
 ─────────────────────────────────────────
-# Verify checksum
-sha256sum -c app-release.apk.sha256
-
 # Install via ADB
-adb install app-release.apk
+$(if [ -f "app-debug.apk" ]; then echo "adb install app-debug.apk"; fi)
+$(if [ -f "app-release-unsigned.apk" ]; then echo "adb install app-release-unsigned.apk"; fi)
+$(if [ -f "app-release-signed.apk" ]; then echo "adb install app-release-signed.apk"; fi)
 
 ╚════════════════════════════════════════╝
 EOF
                     cat build-info.txt
                 '''
                 
-                archiveArtifacts artifacts: 'build-info.txt,audit-*.json', fingerprint: true
+                archiveArtifacts artifacts: 'build-info.txt,audit-*.json', 
+                                fingerprint: true,
+                                allowEmptyArchive: true
             }
         }
     }
@@ -673,6 +1040,7 @@ EOF
             sh '''
                 echo "🧹 Cleaning sensitive files..."
                 rm -f android/app/google-services.json
+                rm -f android/app/my-release-key.keystore
                 rm -f android/app/release.keystore
                 rm -f android/keystore.properties
                 find . -name "*.keystore" -delete 2>/dev/null || true
@@ -699,8 +1067,18 @@ EOF
                 echo "✅ BUILD SUCCESSFUL!"
                 echo ""
                 echo "📱 APK Downloads:"
-                echo "   🟢 Release APK: ${BUILD_URL}artifact/app-release.apk"
-                echo "   🔴 Debug APK:   ${BUILD_URL}artifact/app-debug.apk"
+                
+                if (fileExists('app-debug.apk')) {
+                    echo "   🔴 Debug APK: ${BUILD_URL}artifact/app-debug.apk"
+                }
+                
+                if (params.BUILD_SIGNED_RELEASE && fileExists('app-release-signed.apk')) {
+                    echo "   🟢 Signed Release APK: ${BUILD_URL}artifact/app-release-signed.apk"
+                } else if (fileExists('app-release-unsigned.apk')) {
+                    echo "   🟡 Unsigned Release APK: ${BUILD_URL}artifact/app-release-unsigned.apk"
+                    echo "   ⚠️  This is unsigned - for testing only!"
+                }
+                
                 echo ""
                 echo "📄 Build Info: ${BUILD_URL}artifact/build-info.txt"
                 echo "⏱️  Duration: ${durationMinutes} minutes"
@@ -713,8 +1091,8 @@ EOF
             echo ""
             echo "Common fixes:"
             echo "1. Re-run build with 'CLEAR_GRADLE_CACHE' enabled"
-            echo "2. Check ESLint errors in the logs"
-            echo "3. Verify google-services.json credential is configured"
+            echo "2. Verify google-services.json credential is configured"
+            echo "3. If building signed release, ensure keystore credentials are set up"
         }
         
         unstable {

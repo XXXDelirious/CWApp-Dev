@@ -303,52 +303,6 @@ EOF
         }
         
         // ============================================
-        // STAGE: DEBUG CREDENTIALS (TEMPORARY)
-        // ============================================
-        stage('Debug Credentials') {
-            steps {
-                echo '🔍 DEBUG: Verifying credential loading...'
-                script {
-                    withCredentials([
-                        file(credentialsId: 'android-release-keystore', variable: 'KEYSTORE_FILE'),
-                        string(credentialsId: 'keystore-password', variable: 'STORE_PASSWORD'),
-                        string(credentialsId: 'key-alias', variable: 'KEY_ALIAS'),
-                        string(credentialsId: 'key-password', variable: 'KEY_PASSWORD')
-                    ]) {
-                        sh '''
-                            set -e
-                            
-                            echo "=== CREDENTIAL DEBUG INFO ==="
-                            echo "Keystore file path: $KEYSTORE_FILE"
-                            echo "Keystore file exists: $(test -f "$KEYSTORE_FILE" && echo YES || echo NO)"
-                            
-                            echo "Key alias value: ${KEY_ALIAS}"
-                            echo "Store password length: ${#STORE_PASSWORD}"
-                            echo "Key password length: ${#KEY_PASSWORD}"
-                            
-                            # Check for whitespace issues
-                            echo "Store password has leading space: $(echo "$STORE_PASSWORD" | grep -q "^ " && echo YES || echo NO)"
-                            echo "Store password has trailing space: $(echo "$STORE_PASSWORD" | grep -q " $" && echo YES || echo NO)"
-                            echo "Key password has leading space: $(echo "$KEY_PASSWORD" | grep -q "^ " && echo YES || echo NO)"
-                            echo "Key password has trailing space: $(echo "$KEY_PASSWORD" | grep -q " $" && echo YES || echo NO)"
-                            
-                            # Test the keystore with keytool
-                            echo ""
-                            echo "=== TESTING KEYSTORE WITH CREDENTIALS ==="
-                            if keytool -list -keystore "$KEYSTORE_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
-                                echo "✅ Keystore validation SUCCESSFUL with provided credentials"
-                            else
-                                echo "❌ Keystore validation FAILED - credentials don't match keystore"
-                                echo "   This is why the build is failing!"
-                                exit 1
-                            fi
-                        '''
-                    }
-                }
-            }
-        }
-        
-        // ============================================
         // STAGE 6: CLEAR GRADLE CACHE 
         // ============================================
         stage('Clear Gradle Cache') {
